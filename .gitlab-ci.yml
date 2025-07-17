@@ -1,0 +1,97 @@
+image: python:3.9-slim
+
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+  DOCKER_DRIVER: overlay2
+  CI_REGISTRY_IMAGE: $CI_REGISTRY/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME
+  KUBERNETES_NAMESPACE: default
+
+test:
+  stage: test
+  script:
+    - pip install -r requirements.txt
+    - python -m pytest test_app.py -v
+  artifacts:
+    paths:
+      - .
+    expire_in: 1 hour
+
+build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  dependencies:
+    - test
+  before_script:
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA .
+    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE:latest
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+    - docker push $CI_REGISTRY_IMAGE:latest
+  only:
+    - main
+    - master
+
+deploy:
+  stage: deploy
+  image: 
+    name: bitnami/kubectl:latest
+    entrypoint: [""]
+  dependencies:
+    - build
+  before_script:
+    - echo "$KUBE_CONFIG" > ~/.kube/config
+  script:
+    - |
+      cat <<EOF > deployment.yaml
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: cicd-demo
+        namespace: $KUBERNETES_NAMESPACE
+      spec:
+        replicas: 2
+        selector:
+          matchLabels:
+            app: cicd-demo
+        template:
+          metadata:
+            labels:
+              app: cicd-demo
+          spec:
+            containers:
+            - name: cicd-demo
+              image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+              ports:
+              - containerPort: 5000
+              env:
+              - name: ENVIRONMENT
+                value: production
+              - name: APP_VERSION
+                value: $CI_COMMIT_SHORT_SHA
+      ---
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: cicd-demo
+        namespace: $KUBERNETES_NAMESPACE
+      spec:
+        ports:
+        - port: 80
+          targetPort: 5000
+        selector:
+          app: cicd-demo
+        type: ClusterIP
+      EOF
+    - kubectl apply -f deployment.yaml
+  only:
+    - main
+    - master

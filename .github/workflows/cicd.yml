@@ -1,0 +1,142 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  # Allow manual triggering
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+      
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        
+    - name: Run tests
+      run: |
+        python -m pytest test_app.py -v
+
+  build-and-push:
+    name: Build and Push
+    needs: test
+    runs-on: ubuntu-latest
+    # Only run on main branch, not PRs
+    if: github.event_name != 'pull_request'
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+      
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v1
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Extract metadata for Docker
+      id: meta
+      uses: docker/metadata-action@v3
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=semver,pattern={{version}}
+          type=sha,format=short
+          type=ref,event=branch
+          latest
+          
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        
+  deploy:
+    name: Deploy to Kubernetes
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+      
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v1
+      
+    - name: Set Kubernetes context
+      uses: azure/k8s-set-context@v1
+      with:
+        kubeconfig: ${{ secrets.KUBECONFIG }}
+      
+    - name: Create deployment YAML
+      run: |
+        cat <<EOF > deployment.yaml
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: cicd-demo
+          namespace: default
+        spec:
+          replicas: 2
+          selector:
+            matchLabels:
+              app: cicd-demo
+          template:
+            metadata:
+              labels:
+                app: cicd-demo
+            spec:
+              containers:
+              - name: cicd-demo
+                image: ${REGISTRY}/${IMAGE_NAME}:latest
+                ports:
+                - containerPort: 5000
+                env:
+                - name: ENVIRONMENT
+                  value: production
+                - name: APP_VERSION
+                  value: ${GITHUB_SHA::8}
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: cicd-demo
+          namespace: default
+        spec:
+          ports:
+          - port: 80
+            targetPort: 5000
+          selector:
+            app: cicd-demo
+          type: ClusterIP
+        EOF
+        
+    - name: Deploy to Kubernetes
+      run: |
+        kubectl apply -f deployment.yaml
