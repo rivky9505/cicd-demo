@@ -3,7 +3,7 @@ image: python:3.9-slim
 stages:
   - test
   - build
-  - deploy
+  # - deploy
 
 variables:
   DOCKER_HOST: tcp://docker:2375
@@ -40,58 +40,58 @@ build:
     - main
     - master
 
-deploy:
-  stage: deploy
-  image: 
-    name: bitnami/kubectl:latest
-    entrypoint: [""]
-  dependencies:
-    - build
-  before_script:
-    - echo "$KUBE_CONFIG" > ~/.kube/config
-  script:
-    - |
-      cat <<EOF > deployment.yaml
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: cicd-demo
-        namespace: $KUBERNETES_NAMESPACE
-      spec:
-        replicas: 2
-        selector:
-          matchLabels:
-            app: cicd-demo
-        template:
-          metadata:
-            labels:
-              app: cicd-demo
-          spec:
-            containers:
-            - name: cicd-demo
-              image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-              ports:
-              - containerPort: 5000
-              env:
-              - name: ENVIRONMENT
-                value: production
-              - name: APP_VERSION
-                value: $CI_COMMIT_SHORT_SHA
-      ---
-      apiVersion: v1
-      kind: Service
-      metadata:
-        name: cicd-demo
-        namespace: $KUBERNETES_NAMESPACE
-      spec:
-        ports:
-        - port: 80
-          targetPort: 5000
-        selector:
-          app: cicd-demo
-        type: ClusterIP
-      EOF
-    - kubectl apply -f deployment.yaml
-  only:
-    - main
-    - master
+# deploy:
+#   stage: deploy
+#   image: 
+#     name: bitnami/kubectl:latest
+#     entrypoint: [""]
+#   dependencies:
+#     - build
+#   before_script:
+#     - echo "$KUBE_CONFIG" > ~/.kube/config
+#   script:
+#     - |
+#       cat <<EOF > deployment.yaml
+#       apiVersion: apps/v1
+#       kind: Deployment
+#       metadata:
+#         name: cicd-demo
+#         namespace: $KUBERNETES_NAMESPACE
+#       spec:
+#         replicas: 2
+#         selector:
+#           matchLabels:
+#             app: cicd-demo
+#         template:
+#           metadata:
+#             labels:
+#               app: cicd-demo
+#           spec:
+#             containers:
+#             - name: cicd-demo
+#               image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+#               ports:
+#               - containerPort: 5000
+#               env:
+#               - name: ENVIRONMENT
+#                 value: production
+#               - name: APP_VERSION
+#                 value: $CI_COMMIT_SHORT_SHA
+#       ---
+#       apiVersion: v1
+#       kind: Service
+#       metadata:
+#         name: cicd-demo
+#         namespace: $KUBERNETES_NAMESPACE
+#       spec:
+#         ports:
+#         - port: 80
+#           targetPort: 5000
+#         selector:
+#           app: cicd-demo
+#         type: ClusterIP
+#       EOF
+#     - kubectl apply -f deployment.yaml
+#   only:
+#     - main
+#     - master
