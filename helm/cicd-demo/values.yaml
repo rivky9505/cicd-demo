@@ -1,0 +1,7 @@
+image:
+  repository: ghcr.io/your-org/cicd-demo
+  tag: "latest"
+env:
+  ENVIRONMENT: production
+  APP_VERSION: "1.0.0"
+replicaCount: 2
