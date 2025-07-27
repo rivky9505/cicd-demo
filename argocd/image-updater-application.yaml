@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cicd-demo-registry-based
+  namespace: argocd
+  annotations:
+    # Registry-based GitOps: ArgoCD Image Updater monitors GHCR
+    argocd.argoproj.io/deployment-method: "registry-based"
+    argocd-image-updater.argoproj.io/image-list: app=ghcr.io/rivky9505/cicd-demo
+    argocd-image-updater.argoproj.io/app.update-strategy: latest
+    argocd-image-updater.argoproj.io/app.helm.image-name: image.repository
+    argocd-image-updater.argoproj.io/app.helm.image-tag: image.tag
+    argocd-image-updater.argoproj.io/app.allow-tags: "regexp:^registry-latest$"
+    argocd-image-updater.argoproj.io/write-back-method: git
+    argocd-image-updater.argoproj.io/git-branch: master
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rivky9505/cicd-demo.git
+    targetRevision: master
+    path: helm/cicd-demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: registry-demo  # Different namespace to avoid conflicts
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

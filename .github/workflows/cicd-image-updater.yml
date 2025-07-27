@@ -1,0 +1,73 @@
+name: CI/CD with ArgoCD Image Updater
+
+on:
+  push:
+    branches: [ master ]
+    paths-ignore:
+      - 'helm/cicd-demo/values.yaml'
+  pull_request:
+    branches: [ master ]
+    paths-ignore:
+      - 'helm/cicd-demo/values.yaml'
+  workflow_dispatch:
+
+# Simplified CI/CD workflow: test, build, push image
+# ArgoCD Image Updater will handle deployment automatically
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install --upgrade pip && pip install -r requirements.txt
+      - name: Run tests
+        run: pytest
+
+  build-and-publish:
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Build and push Docker images
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Deployment notification
+        run: |
+          echo "🚀 Image pushed to GHCR!"
+          echo "📦 Image: ghcr.io/${{ github.repository }}:${{ github.sha }}"
+          echo "🔄 ArgoCD Image Updater will automatically detect and deploy this new image"
