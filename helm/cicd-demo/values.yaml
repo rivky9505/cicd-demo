@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/rivky9505/cicd-demo
-  tag: "f3fdf4cefac2aaf90f52d7aa3f0001dd288da484"
+  tag: "6d136fa6b4b993eb67f910aa6e9f98882bc70227"
 env:
   ENVIRONMENT: production
   APP_VERSION: "1.0.0"
